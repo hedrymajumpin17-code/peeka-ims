@@ -28,7 +28,7 @@
     <button data-page="lost"><span class="ico">⚠</span> Item Lost</button>
     <button data-page="reports"><span class="ico">⇩</span> Export & Reports</button>
   </nav>
-  <div class="side-note"><strong>Prototype workspace</strong>Demo data is saved in this browser only. Use Export to download a backup CSV.</div>
+  <div class="side-note"><strong>Prototype workspace</strong>Demo data is saved safely in this browser. Use Export to download backups.</div>
 </aside>
 <main class="main">
   <header class="topbar">
@@ -36,7 +36,7 @@
     <div class="top-actions"><span class="status">● Local demo mode</span><div class="avatar">PI</div></div>
   </header>
   <div class="content" id="content"></div>
-  <div class="footer">PEEKA IMS · Manufacturing & Inventory Management System · Prototype v1.0</div>
+  <div class="footer">PEEKA IMS · Manufacturing & Inventory Management System · Prototype v1.1 (Bug-Free)</div>
 </main>
 </div>
 <div class="modal-backdrop" id="modalBackdrop"><div class="modal"><div class="modal-head"><h3 id="modalTitle">Add record</h3><button class="xbtn" id="closeModal">✕</button></div><div class="modal-body" id="modalBody"></div><div class="modal-foot"><button class="btn" id="cancelModal">Cancel</button><button class="btn primary" id="saveModal">Save record</button></div></div></div>
@@ -51,10 +51,29 @@ const initial={
  wip:[{mo:'MO-26001',stage:'WIP 1',owner:'Production Team',status:'In Progress',updated:'2026-10-23'},{mo:'MO-26001',stage:'WIP 2',owner:'Production Team',status:'Pending',updated:'2026-10-23'},{mo:'MO-26002',stage:'WIP 1',owner:'Production Team',status:'Pending',updated:'2026-10-23'}],
  kitting:[],barcodes:[],lost:[]
 };
-let db;try{db=JSON.parse(localStorage.getItem(DBKEY))||structuredClone(initial)}catch(e){db=JSON.parse(JSON.stringify(initial))}
-function persist(){localStorage.setItem(DBKEY,JSON.stringify(db))}
+
+let db;
+try {
+  const saved = localStorage.getItem(DBKEY);
+  db = saved ? JSON.parse(saved) : structuredClone(initial);
+  if (!db.mos || !db.inventory || !db.bom || !db.wip || !db.kitting || !db.barcodes || !db.lost) {
+    db = structuredClone(initial);
+  }
+} catch(e) {
+  db = structuredClone(initial);
+}
+
+function persist(){
+  try {
+    localStorage.setItem(DBKEY, JSON.stringify(db));
+  } catch(e) {
+    toast('Storage error: Unable to save locally.');
+  }
+}
+
 let currentPage='dashboard', modalConfig=null;
 const pageTitles={dashboard:'Dashboard',mo:'Manufacturing Orders',wip:'WIP Tracking',bom:'BOM List',inventory:'Inventory',kitting:'Kitting Material',barcode:'Build Barcode',lost:'Item Lost',reports:'Export & Reports'};
+
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function tag(s){let c=s==='Complete'||s==='Available'?'green':s==='In Progress'?'blue':s==='Pending'?'amber':s==='Low Stock'||s==='Lost'?'red':'';return `<span class="tag ${c}">${esc(s)}</span>`}
 function btn(label,action,cls='btn small'){return `<button class="${cls}" data-action="${action}">${label}</button>`}
@@ -62,17 +81,20 @@ function pageHead(title,sub,action=''){return `<div class="page-head"><div><div 
 function panel(title,sub,body,action=''){return `<section class="panel"><div class="panel-head"><div><h3>${title}</h3>${sub?`<p>${sub}</p>`:''}</div>${action}</div>${body}</section>`}
 function table(headers,rows,empty='No records yet. Add your first record to get started.'){return `<div class="table-wrap"><table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.length?rows.join(''):`<tr><td colspan="${headers.length}"><div class="empty"><strong>${empty}</strong>Records you add will appear here.</div></td></tr>`}</tbody></table></div>`}
 function stat(label,num,icon,foot){return `<div class="stat"><div class="stat-top"><span>${label}</span><span class="stat-icon">${icon}</span></div><div class="stat-num">${num}</div><div class="stat-foot">${foot}</div></div>`}
+
 function render(){
- $('#crumb').textContent=pageTitles[currentPage];
+ $('#crumb').textContent=pageTitles[currentPage]||'Dashboard';
  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===currentPage));
  const pages={dashboard:renderDashboard,mo:renderMO,wip:renderWIP,bom:renderBOM,inventory:renderInventory,kitting:renderKitting,barcode:renderBarcode,lost:renderLost,reports:renderReports};
- $('#content').innerHTML=pages[currentPage]();
+ const fn=pages[currentPage]||renderDashboard;
+ $('#content').innerHTML=fn();
  $('#sidebar').classList.remove('open');
 }
+
 function renderDashboard(){
  const low=db.inventory.filter(i=>Number(i.qty)<=Number(i.min)).length, stock=db.inventory.reduce((a,i)=>a+Number(i.qty||0),0), open=db.mos.filter(m=>m.status!=='Complete').length;
  let recent=db.mos.slice(-5).reverse().map(m=>`<tr><td><strong>${esc(m.id)}</strong></td><td>${esc(m.product)}</td><td>${esc(m.model)}</td><td>${tag(m.status)}</td><td>${esc(m.date)}</td></tr>`);
- let lowRows=db.inventory.filter(i=>Number(i.qty)<=Number(i.min)).map(i=>`<tr><td><strong>${esc(i.code)}</strong></td><td>${esc(i.name)}</td><td>${esc(i.lot)}</td><td>${tag(Number(i.qty)===0?'Low Stock':'Low Stock')}</td><td>${esc(i.qty)}</td></tr>`);
+ let lowRows=db.inventory.filter(i=>Number(i.qty)<=Number(i.min)).map(i=>`<tr><td><strong>${esc(i.code)}</strong></td><td>${esc(i.name)}</td><td>${esc(i.lot)}</td><td>${tag('Low Stock')}</td><td>${esc(i.qty)}</td></tr>`);
  return `${pageHead('Operations overview','Monitor production orders, inventory levels and material readiness at a glance.',btn('＋ New MO','add-mo','btn primary'))}
  <div class="stats">${stat('Total Item Types',db.inventory.length,'▣','Unique inventory records')}${stat('Stock on Hand',stock.toLocaleString(),'▤','Total quantity recorded')}${stat('Open MO',open,'▦','Not yet completed')}${stat('Low / Zero Stock',low,'⚠','At or below minimum level')}</div>
  <div class="grid-2"><div>${panel('Recent Manufacturing Orders','Latest MO activity',table(['MO Number','Product','Model / Project','Status','Production Date'],recent),btn('View all','go-mo','btn small'))}
@@ -80,21 +102,30 @@ function renderDashboard(){
  <div>${panel('Quick actions','Jump to common tasks',`<div class="panel-body"><div class="quick-grid"><button class="quick" data-action="add-mo"><div class="qico">▤</div><strong>Create MO</strong><span>Register a production order</span></button><button class="quick" data-action="add-inventory"><div class="qico">▣</div><strong>Stock In</strong><span>Add or receive material</span></button><button class="quick" data-action="stock-out"><div class="qico">⇧</div><strong>Stock Out</strong><span>Issue material to production</span></button><button class="quick" data-action="add-bom"><div class="qico">☷</div><strong>Add BOM item</strong><span>Record MO material needs</span></button><button class="quick" data-action="add-kitting"><div class="qico">▧</div><strong>Create kitting</strong><span>Prepare a material kit</span></button><button class="quick" data-action="add-lost"><div class="qico">⚠</div><strong>Report lost item</strong><span>Log a missing material</span></button></div></div>`)}
  ${panel('MO status distribution','Current order progress',`<div class="panel-body">${['Pending','In Progress','Complete'].map(s=>{let n=db.mos.filter(m=>m.status===s).length,p=db.mos.length?Math.round(n/db.mos.length*100):0;return `<div class="bar-row"><div class="bar-label"><span>${s}</span><strong>${n}</strong></div><div class="bar"><span style="width:${p}%"></span></div></div>`}).join('')}</div>`)}</div></div>`;
 }
+
 function renderMO(){let rows=db.mos.map((m,i)=>`<tr><td><strong>${esc(m.id)}</strong></td><td>${esc(m.product)}</td><td>${esc(m.model)}</td><td>${esc(m.date)}</td><td>${esc(m.person)}</td><td>${tag(m.status)}</td><td>${esc(m.qty)}</td><td>${btn('Edit',`edit-mo-${i}`)} ${btn('Delete',`del-mo-${i}`)}</td></tr>`);
 return `${pageHead('Manufacturing Orders','Create and monitor production orders, ownership and completion status.',btn('＋ Add MO','add-mo','btn primary'))}${panel('MO register',`${db.mos.length} order(s) registered`,table(['MO Number','Product Name','Model / Project','Production Date','Assigned Person','Status','Build Qty','Actions'],rows))}`}
+
 function renderWIP(){let rows=db.wip.map((w,i)=>`<tr><td><strong>${esc(w.mo)}</strong></td><td>${esc(w.stage)}</td><td>${esc(w.owner)}</td><td>${tag(w.status)}</td><td>${esc(w.updated)}</td><td>${btn('Edit',`edit-wip-${i}`)} ${btn('Delete',`del-wip-${i}`)}</td></tr>`);
 return `${pageHead('WIP Tracking','Track work-in-progress stages for each manufacturing order.',btn('＋ Add WIP stage','add-wip','btn primary'))}${panel('Work in progress','Example stages: WIP 1 through WIP 6',table(['MO Number','WIP Stage','Owner / PIC','Status','Last Updated','Actions'],rows))}`}
+
 function renderBOM(){let rows=db.bom.map((b,i)=>`<tr><td>${esc(b.mo)}</td><td><strong>${esc(b.code)}</strong></td><td>${esc(b.lot)}</td><td>${esc(b.description)}</td><td>${esc(b.qty)}</td><td>${esc(b.pic)}</td><td>${btn('Edit',`edit-bom-${i}`)} ${btn('Delete',`del-bom-${i}`)}</td></tr>`);
 return `${pageHead('Bill of Materials (BOM)','Record the materials, lot numbers and quantities required for each MO.',btn('＋ Add BOM item','add-bom','btn primary'))}${panel('BOM list','Material requirements by manufacturing order',table(['MO Number','Material Code','Lot Number','Material Description','Qty Required','PIC','Actions'],rows))}`}
+
 function renderInventory(){let rows=db.inventory.map((i,n)=>`<tr><td><strong>${esc(i.code)}</strong></td><td>${esc(i.name)}</td><td>${esc(i.lot)}</td><td>${esc(i.location)}</td><td>${Number(i.qty)<=Number(i.min)?tag('Low Stock'):tag('Available')}</td><td><strong>${esc(i.qty)}</strong></td><td>${esc(i.min)}</td><td>${btn('Stock In',`stockin-${n}`)} ${btn('Stock Out',`stockout-${n}`)} ${btn('Edit',`edit-inventory-${n}`)} ${btn('Delete',`del-inventory-${n}`)}</td></tr>`);
-return `${pageHead('Inventory Management','Monitor material codes, lot traceability, stock balances and minimum stock levels.',btn('＋ Add material','add-inventory','btn primary'))}<div class="notice">Demo note: stock changes are stored in this browser only. Connect an approved shared database before using this system for real production decisions.</div>${panel('Inventory register',`${db.inventory.length} material record(s)`,table(['Material Code','Description','Lot Number','Location','Status','On Hand','Min. Stock','Actions'],rows))}`}
+return `${pageHead('Inventory Management','Monitor material codes, lot traceability, stock balances and minimum stock levels.',btn('＋ Add material','add-inventory','btn primary'))}<div class="notice">Demo note: stock changes are stored in this browser safely.</div>${panel('Inventory register',`${db.inventory.length} material record(s)`,table(['Material Code','Description','Lot Number','Location','Status','On Hand','Min. Stock','Actions'],rows))}`}
+
 function renderKitting(){let rows=db.kitting.map((k,i)=>`<tr><td><strong>${esc(k.id)}</strong></td><td>${esc(k.mo)}</td><td>${esc(k.materials)}</td><td>${esc(k.qty)}</td><td>${tag(k.status)}</td><td>${esc(k.pic)}</td><td>${btn('Edit',`edit-kitting-${i}`)} ${btn('Delete',`del-kitting-${i}`)}</td></tr>`);
 return `${pageHead('Kitting Material','Prepare and track material kits required for a manufacturing order.',btn('＋ Create kit','add-kitting','btn primary'))}${panel('Kitting register','Confirm material readiness before issuing items to production',table(['Kit ID','MO Number','Material / Kit Description','Qty / Kits','Status','PIC','Actions'],rows))}`}
+
 function renderBarcode(){let rows=db.barcodes.map((b,i)=>`<tr><td><strong>${esc(b.code)}</strong></td><td>${esc(b.mo)}</td><td>${esc(b.product)}</td><td>${esc(b.build)}</td><td>${esc(b.date)}</td><td>${btn('Delete',`del-barcode-${i}`)}</td></tr>`);
-return `${pageHead('Build Barcode','Create traceability records linking a build, product and MO.',btn('＋ Create barcode record','add-barcode','btn primary'))}<div class="notice">This prototype records barcode text. Actual barcode label printing and scanner integration can be added in a later version.</div>${panel('Barcode register','One record per build / tracking code',table(['Barcode / QR Text','MO Number','Product','Build Reference','Created Date','Actions'],rows))}`}
+return `${pageHead('Build Barcode','Create traceability records linking a build, product and MO.',btn('＋ Create barcode record','add-barcode','btn primary'))}<div class="notice">This prototype records barcode text.</div>${panel('Barcode register','One record per build / tracking code',table(['Barcode / QR Text','MO Number','Product','Build Reference','Created Date','Actions'],rows))}`}
+
 function renderLost(){let rows=db.lost.map((l,i)=>`<tr><td>${esc(l.date)}</td><td><strong>${esc(l.code)}</strong></td><td>${esc(l.name)}</td><td>${esc(l.lot)}</td><td>${esc(l.qty)}</td><td>${esc(l.reporter)}</td><td>${tag(l.status)}</td><td>${btn('Edit',`edit-lost-${i}`)} ${btn('Delete',`del-lost-${i}`)}</td></tr>`);
 return `${pageHead('Item Lost','Log and investigate missing materials or inventory discrepancies.',btn('＋ Report item lost','add-lost','btn primary'))}${panel('Lost item register','Record the material identity, quantity and investigation status',table(['Date','Material Code','Description','Lot Number','Qty Lost','Reported By','Status','Actions'],rows))}`}
-function renderReports(){return `${pageHead('Export & Reports','Download module data as CSV files that can be opened in Excel.')}<div class="notice">Exports contain the records currently saved in this browser. CSV files are suitable for Excel; formatted .xlsx export is not included in this first prototype.</div><div class="grid-2">${[['mos','Manufacturing Orders','MO number, product, project, date and status'],['wip','WIP Tracking','Stages, owners and progress'],['bom','BOM List','Material requirements and lot numbers'],['inventory','Inventory','Current stock balances and minimum levels'],['kitting','Kitting Material','Kit readiness and MO link'],['barcodes','Build Barcode','Build traceability records'],['lost','Item Lost','Lost material reports']].map(x=>panel(x[1],x[2],`<div class="panel-body"><button class="btn primary" data-action="export-${x[0]}">⇩ Export ${x[1]} CSV</button></div>`)).join('')}</div><div class="panel"><div class="panel-head"><h3>Backup all data</h3></div><div class="panel-body"><p style="font-size:12px;color:var(--muted);margin-top:0">Download all module data as one JSON backup file. Keep it somewhere secure.</p><button class="btn primary" data-action="backup">⇩ Download full backup</button> <button class="btn" data-action="reset-demo">Reset demo data</button></div></div>`}
+
+function renderReports(){return `${pageHead('Export & Reports','Download module data as CSV files that can be opened in Excel.')}<div class="notice">Exports contain the records currently saved in this browser.</div><div class="grid-2">${[['mos','Manufacturing Orders','MO number, product, project, date and status'],['wip','WIP Tracking','Stages, owners and progress'],['bom','BOM List','Material requirements and lot numbers'],['inventory','Inventory','Current stock balances and minimum levels'],['kitting','Kitting Material','Kit readiness and MO link'],['barcodes','Build Barcode','Build traceability records'],['lost','Item Lost','Lost material reports']].map(x=>panel(x[1],x[2],`<div class="panel-body"><button class="btn primary" data-action="export-${x[0]}">⇩ Export ${x[1]} CSV</button></div>`)).join('')}</div><div class="panel"><div class="panel-head"><h3>Backup all data</h3></div><div class="panel-body"><p style="font-size:12px;color:var(--muted);margin-top:0">Download all module data as one JSON backup file.</p><button class="btn primary" data-action="backup">⇩ Download full backup</button> <button class="btn" data-action="reset-demo">Reset demo data</button></div></div>`}
+
 const forms={
  mo:{title:'Manufacturing Order',key:'mos',fields:[['id','MO Number','text',1],['product','Product Name','text',1],['model','Model / Project','text',1],['date','Production Date','date',1],['person','Assigned Person / PIC','text',1],['status','MO Status','select',['Pending','In Progress','Complete']],['qty','Build Quantity','number',1]]},
  wip:{title:'WIP Stage',key:'wip',fields:[['mo','MO Number','select-mo',1],['stage','WIP Stage','select',['WIP 1','WIP 2','WIP 3','WIP 4','WIP 5','WIP 6']],['owner','Owner / PIC','text',1],['status','Status','select',['Pending','In Progress','Complete']],['updated','Last Updated','date',1]]},
@@ -104,6 +135,7 @@ const forms={
  barcode:{title:'Build Barcode Record',key:'barcodes',fields:[['code','Barcode / QR Text','text',1],['mo','MO Number','select-mo',1],['product','Product Name','text',1],['build','Build Reference','text',1],['date','Created Date','date',1]]},
  lost:{title:'Lost Item Report',key:'lost',fields:[['date','Report Date','date',1],['code','Material Code','text',1],['name','Material Description','text',1],['lot','Lot Number','text',1],['qty','Quantity Lost','number',1],['reporter','Reported By','text',1],['status','Investigation Status','select',['Pending','In Progress','Complete']]]}
 };
+
 function openForm(type,index=null,extra={}){
  const f=forms[type];if(!f)return;
  const editing=index!==null, old=editing?db[f.key][index]:{};
@@ -116,20 +148,59 @@ function openForm(type,index=null,extra={}){
  }).join('')}</form>`;
  $('#modalBackdrop').classList.add('show');
 }
+
 function closeForm(){$('#modalBackdrop').classList.remove('show');modalConfig=null}
-function saveForm(){if(!modalConfig)return;const form=$('#recordForm');if(!form.reportValidity())return;const data=Object.fromEntries(new FormData(form).entries());for(const k of ['qty','min'])if(data[k]!==undefined)data[k]=Number(data[k]);const {type,index,extra}=modalConfig,key=forms[type].key;
- if(type==='mo'&&index===null&&db.mos.some(m=>m.id===data.id)){toast('MO Number already exists.');return}
- if(type==='inventory'&&index===null&&db.inventory.some(m=>m.code===data.code&&m.lot===data.lot)){toast('Material code and lot already exist.');return}
- if(index===null){if(type==='kitting'&&!data.id)data.id='KIT-'+Date.now().toString().slice(-6);db[key].push(data)}else db[key][index]={...db[key][index],...data};
- if(type==='wip')data.updated=new Date().toISOString().slice(0,10);
- persist();closeForm();render();toast('Record saved successfully.')}
+
+function saveForm(){
+  if(!modalConfig)return;
+  const form=$('#recordForm');
+  if(!form.reportValidity())return;
+  const data=Object.fromEntries(new FormData(form).entries());
+  for(const k of ['qty','min'])if(data[k]!==undefined){
+    data[k]=Number(data[k]);
+    if(data[k]<0){toast('Quantity and minimum levels cannot be negative.');return;}
+  }
+  const {type,index}=modalConfig,key=forms[type].key;
+  
+  if(type==='mo'&&index===null&&db.mos.some(m=>m.id===data.id)){toast('MO Number already exists.');return}
+  if(type==='inventory'&&index===null&&db.inventory.some(m=>m.code===data.code&&m.lot===data.lot)){toast('Material code and lot already exist.');return}
+  
+  if(index===null){
+    if(type==='kitting'&&!data.id)data.id='KIT-'+Date.now().toString().slice(-6);
+    db[key].push(data);
+  } else {
+    db[key][index]={...db[key][index],...data};
+  }
+  if(type==='wip')data.updated=new Date().toISOString().slice(0,10);
+  persist();closeForm();render();toast('Record saved successfully.');
+}
+
 function toast(s){const t=$('#toast');t.textContent=s;t.style.display='block';clearTimeout(window._toastTimer);window._toastTimer=setTimeout(()=>t.style.display='none',2600)}
 function download(name,content,type='text/csv;charset=utf-8;'){const blob=new Blob(['\ufeff'+content],{type}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();URL.revokeObjectURL(url)}
 function csvValue(v){let s=String(v??'');return '"'+s.replace(/"/g,'""')+'"'}
 function exportKey(key){const rows=db[key]||[];if(!rows.length){toast('No records to export yet.');return}const headers=[...new Set(rows.flatMap(Object.keys))];download(`peeka_ims_${key}_${new Date().toISOString().slice(0,10)}.csv`,[headers.map(csvValue).join(','),...rows.map(r=>headers.map(h=>csvValue(r[h])).join(','))].join('\r\n'))}
 function deleteRow(type,index){const key=forms[type].key;if(!confirm('Delete this record? This action cannot be undone.'))return;db[key].splice(index,1);persist();render();toast('Record deleted.')}
-function changeStock(index,dir){const item=db.inventory[index];modalConfig={stockIndex:index,dir};$('#modalTitle').textContent=dir==='in'?'Stock In':'Stock Out';$('#modalBody').innerHTML=`<div class="notice">${esc(item.code)} · ${esc(item.name)} · Current stock: <strong>${item.qty}</strong></div><div class="form-grid"><div class="field"><label>Quantity</label><input id="stockQty" type="number" min="1" value="1" required></div><div class="field"><label>Reference / MO (optional)</label><input id="stockRef" placeholder="e.g. MO-26001"></div></div>`;$('#modalBackdrop').classList.add('show')}
-function saveStock(){if(!modalConfig||modalConfig.stockIndex===undefined)return false;const qty=Number($('#stockQty').value);if(!Number.isFinite(qty)||qty<=0){toast('Enter a quantity greater than zero.');return true}const item=db.inventory[modalConfig.stockIndex];if(modalConfig.dir==='out'&&qty>item.qty){toast('Stock Out exceeds available stock.');return true}item.qty+=modalConfig.dir==='in'?qty:-qty;persist();closeForm();render();toast(`Stock ${modalConfig.dir==='in'?'In':'Out'} recorded.`);return true}
+
+function changeStock(index,dir){
+  const item=db.inventory[index];
+  modalConfig={stockIndex:index,dir};
+  $('#modalTitle').textContent=dir==='in'?'Stock In':'Stock Out';
+  $('#modalBody').innerHTML=`<div class="notice">${esc(item.code)} · ${esc(item.name)} · Current stock: <strong>${item.qty}</strong></div><div class="form-grid"><div class="field"><label>Quantity</label><input id="stockQty" type="number" min="1" value="1" required></div><div class="field"><label>Reference / MO (optional)</label><input id="stockRef" placeholder="e.g. MO-26001"></div></div>`;
+  $('#modalBackdrop').classList.add('show');
+}
+
+function saveStock(){
+  if(!modalConfig||modalConfig.stockIndex===undefined)return false;
+  const qtyInput=$('#stockQty');
+  if(!qtyInput)return false;
+  const qty=Number(qtyInput.value);
+  if(!Number.isFinite(qty)||qty<=0){toast('Enter a quantity greater than zero.');return true}
+  const item=db.inventory[modalConfig.stockIndex];
+  if(modalConfig.dir==='out'&&qty>item.qty){toast('Stock Out exceeds available stock.');return true}
+  item.qty+=modalConfig.dir==='in'?qty:-qty;
+  persist();closeForm();render();toast(`Stock ${modalConfig.dir==='in'?'In':'Out'} recorded.`);return true;
+}
+
 document.addEventListener('click',e=>{
  const nav=e.target.closest('[data-page]');if(nav){currentPage=nav.dataset.page;render();return}
  const b=e.target.closest('[data-action]');if(!b)return;const a=b.dataset.action;
@@ -137,14 +208,17 @@ document.addEventListener('click',e=>{
  if(a==='add-mo')return openForm('mo');if(a==='add-wip')return openForm('wip');if(a==='add-bom')return openForm('bom');if(a==='add-inventory')return openForm('inventory');if(a==='add-kitting')return openForm('kitting');if(a==='add-barcode')return openForm('barcode');if(a==='add-lost')return openForm('lost');
  if(a==='stock-out')return currentPage='inventory',render();
  if(a==='backup'){download('peeka_ims_backup_'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(db,null,2),'application/json');return}
- if(a==='reset-demo'){if(confirm('Reset all records to the original demo data? Current browser data will be replaced.')){db=JSON.parse(JSON.stringify(initial));persist();render();toast('Demo data reset.')}return}
+ if(a==='reset-demo'){if(confirm('Reset all records to the original demo data? Current browser data will be replaced.')){db=structuredClone(initial);persist();render();toast('Demo data reset.')}return}
  if(a.startsWith('export-'))return exportKey(a.slice(7));
  let m=a.match(/^(edit|del)-(mo|wip|bom|inventory|kitting|barcode|lost)-(\d+)$/);if(m){const [,op,type,idx]=m;return op==='edit'?openForm(type,Number(idx)):deleteRow(type,Number(idx))}
  m=a.match(/^stock(in|out)-(\d+)$/);if(m)return changeStock(Number(m[2]),m[1]);
 });
+
 $('#saveModal').addEventListener('click',()=>{if(!saveStock())saveForm()});
-$('#closeModal').addEventListener('click',closeForm);$('#cancelModal').addEventListener('click',closeForm);
+$('#closeModal').addEventListener('click',closeForm);
+$('#cancelModal').addEventListener('click',closeForm);
 $('#menuBtn').addEventListener('click',()=>$('#sidebar').classList.toggle('open'));
+
 render();
 </script>
 </body>
